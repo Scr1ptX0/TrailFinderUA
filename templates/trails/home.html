@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}TrailFinder UA — Карпатські маршрути{% endblock %}
+
+{% block extra_css %}
+#map { height: 78vh; }
+.filter-wrap { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 14px; }
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Бічна панель -->
+  <div class="col-lg-3 col-md-4">
+    <div class="filter-wrap">
+
+      <!-- Фільтри -->
+      <div class="side-panel">
+        <div class="side-panel-title"><i class="fas fa-sliders-h me-2"></i>Фільтр маршрутів</div>
+
+        <div class="mb-3">
+          <label class="form-label">Складність (SAC)</label>
+          <select class="form-select form-select-sm" id="sac-filter">
+            <option value="">Усі рівні</option>
+            {% for val, label in sac_choices %}
+              <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Макс. відстань (км)</label>
+          <input type="number" class="form-control form-control-sm" id="max-dist" min="0" max="100" placeholder="напр. 15">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Макс. набір висоти (м)</label>
+          <input type="number" class="form-control form-control-sm" id="max-elev" min="0" max="3000" placeholder="напр. 1000">
+        </div>
+        <button type="button" class="btn btn-tf w-100 mb-2" onclick="applyFilters()">
+          <i class="fas fa-search me-1"></i> Застосувати
+        </button>
+        <button type="button" class="btn btn-tf-outline w-100" onclick="resetFilters()">
+          <i class="fas fa-undo me-1"></i> Скинути
+        </button>
+      </div>
+
+      <!-- Легенда -->
+      <div class="side-panel">
+        <div class="side-panel-title"><i class="fas fa-palette me-2"></i>Легенда</div>
+        <div class="legend-row"><span class="legend-line" style="background:#2e7d32"></span>T1 — Піший</div>
+        <div class="legend-row"><span class="legend-line" style="background:#f9a825"></span>T2 — Гірський</div>
+        <div class="legend-row"><span class="legend-line" style="background:#e65100"></span>T3 — Вимогливий</div>
+        <div class="legend-row"><span class="legend-line" style="background:#c62828"></span>T4 — Альпійський</div>
+        <div class="legend-row"><span class="legend-line" style="background:#880e4f"></span>T5 — Вимогл. альпійський</div>
+        <div class="legend-row"><span class="legend-line" style="background:#4a148c"></span>T6 — Складний альпійський</div>
+        <hr style="border-color:#e0e0e0;margin:10px 0">
+        <div class="legend-row"><span class="legend-dot" style="background:#1565c0"></span>Джерело води</div>
+        <div class="legend-row"><span class="legend-dot" style="background:#6d4c41"></span>Притулок / хата</div>
+        <div class="legend-row"><span class="legend-dot" style="background:#2e7d32"></span>Кемпінг</div>
+        <div class="legend-row"><span class="legend-dot" style="background:#0288d1"></span>Оглядовий майданчик</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Карта -->
+  <div class="col-lg-9 col-md-8">
+    <div id="map"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const SAC_COLORS = {{ sac_colors|safe }};
+const trailsData = {{ trails_geojson|safe }};
+const poisData   = {{ pois_geojson|safe }};
+
+const POI_ICONS = {
+  water_source: { icon:'fa-tint',      color:'#1565c0', label:'Джерело води' },
+  shelter:      { icon:'fa-home',      color:'#6d4c41', label:'Притулок' },
+  camping:      { icon:'fa-campground',color:'#2e7d32', label:'Кемпінг' },
+  viewpoint:    { icon:'fa-eye',       color:'#0288d1', label:'Оглядовий майданчик' },
+};
+
+const SAC_UA = {
+  hiking:'T1 — Піший', mountain_hiking:'T2 — Гірський',
+  demanding_mountain_hiking:'T3 — Вимогливий', alpine_hiking:'T4 — Альпійський',
+  demanding_alpine_hiking:'T5 — Вимогливий альпійський', difficult_alpine_hiking:'T6 — Складний альпійський',
+};
+
+function makeDivIcon(type) {
+  const c = POI_ICONS[type] || { icon:'fa-map-marker', color:'#555' };
+  return L.divIcon({
+    html:`<div style="background:${c.color};width:26px;height:26px;border-radius:50%;display:flex;
+               align-items:center;justify-content:center;border:2px solid #fff;
+               box-shadow:0 2px 6px rgba(0,0,0,.3)">
+            <i class="fas ${c.icon}" style="color:#fff;font-size:12px"></i>
+          </div>`,
+    iconSize:[26,26], iconAnchor:[13,13], className:'',
+  });
+}
+
+const map = L.map('map').setView([48.15, 23.5], 9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'&copy; OpenStreetMap contributors', maxZoom:18,
+}).addTo(map);
+
+let trailLayer = L.layerGroup().addTo(map);
+let poiLayer   = L.layerGroup().addTo(map);
+
+function renderTrails(geojson) {
+  trailLayer.clearLayers();
+  L.geoJSON(geojson, {
+    style: f => ({ color: SAC_COLORS[f.properties.sac_scale] || '#9e9e9e', weight:3, opacity:.85 }),
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      layer.bindPopup(`
+        <div style="font-family:Montserrat,sans-serif;min-width:180px">
+          <div style="font-weight:700;font-size:.95rem;margin-bottom:6px">${p.name}</div>
+          <div style="font-size:.78rem;color:#555;margin-bottom:8px">${SAC_UA[p.sac_scale] || p.sac_scale}</div>
+          <div style="display:flex;gap:12px;font-size:.82rem;margin-bottom:10px">
+            <span>📏 ${p.distance_km} км</span>
+            <span>⛰️ ${p.elevation_gain_m} м</span>
+            <span>⏱️ ${p.estimated_time_h} год</span>
+          </div>
+          <a href="/trails/${p.id}/" style="display:block;text-align:center;background:#2e7d32;
+             color:#fff;border-radius:8px;padding:5px 0;font-size:.8rem;font-weight:600;text-decoration:none">
+            Переглянути маршрут →
+          </a>
+        </div>
+      `);
+    },
+  }).addTo(trailLayer);
+}
+
+function renderPOIs(geojson) {
+  poiLayer.clearLayers();
+  L.geoJSON(geojson, {
+    pointToLayer: (f, ll) => L.marker(ll, { icon: makeDivIcon(f.properties.poi_type) }),
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      const cfg = POI_ICONS[p.poi_type] || {};
+      layer.bindPopup(`<b>${p.name}</b><br><span style="font-size:.8rem;color:#777">${cfg.label || p.poi_type}</span>`);
+    },
+  }).addTo(poiLayer);
+}
+
+renderTrails(trailsData);
+renderPOIs(poisData);
+
+function buildQuery() {
+  const params = new URLSearchParams();
+  const sac  = document.getElementById('sac-filter').value;
+  const dist = document.getElementById('max-dist').value;
+  const elev = document.getElementById('max-elev').value;
+  if (sac)  params.set('sac_scale', sac);
+  if (dist) params.set('max_distance', dist);
+  if (elev) params.set('max_elevation', elev);
+  const b = map.getBounds();
+  params.set('bbox', [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(','));
+  return params.toString();
+}
+
+async function applyFilters() {
+  const resp = await fetch(`/api/trails/?${buildQuery()}`);
+  const data = await resp.json();
+  renderTrails(data);
+}
+
+function resetFilters() {
+  document.getElementById('sac-filter').value = '';
+  document.getElementById('max-dist').value   = '';
+  document.getElementById('max-elev').value   = '';
+  renderTrails(trailsData);
+}
+</script>
+{% endblock %}

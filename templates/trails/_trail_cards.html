@@ -1,0 +1,30 @@
+{% for trail in page %}
+<div class="col-sm-6 col-lg-4">
+  <a href="{% url 'trail-detail' trail.pk %}" class="text-decoration-none">
+    <div class="tf-card p-3 h-100">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <span class="sac-badge sac-{{ trail.sac_scale }}">{{ trail.get_sac_scale_display }}</span>
+        {% if trail.surface %}
+          <span style="font-size:.72rem;color:#888;background:#f5f5f5;padding:2px 8px;border-radius:20px">
+            {{ trail.surface }}
+          </span>
+        {% endif %}
+      </div>
+      <h6 class="fw-bold mb-2" style="color:#1a2e1a;font-family:Montserrat,sans-serif;font-size:.92rem">
+        {{ trail.name }}
+      </h6>
+      <div class="d-flex gap-3 mt-auto" style="font-size:.8rem;color:#6b7c6b">
+        <span><i class="fas fa-route me-1" style="color:#2e7d32"></i>{{ trail.distance_km }} км</span>
+        <span><i class="fas fa-arrow-up me-1" style="color:#e65100"></i>{{ trail.elevation_gain_m }} м</span>
+        <span><i class="fas fa-clock me-1" style="color:#1565c0"></i>
+          {% widthratio trail.distance_km 5 1 %} год</span>
+      </div>
+    </div>
+  </a>
+</div>
+{% empty %}
+<div class="col-12 text-center py-5">
+  <i class="fas fa-search" style="font-size:3rem;color:#c8e6c9;margin-bottom:1rem;display:block"></i>
+  <p class="text-muted">Маршрутів не знайдено. Спробуйте змінити фільтри.</p>
+</div>
+{% endfor %}

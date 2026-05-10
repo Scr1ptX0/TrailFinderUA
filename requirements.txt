@@ -1,0 +1,23 @@
+# Core
+Django>=5.1,<5.2
+psycopg2-binary>=2.9
+# GeoDjango backend for PostGIS
+# (no extra pip package needed — django.contrib.gis is bundled with Django)
+
+# API
+djangorestframework>=3.15
+djangorestframework-gis>=1.0
+
+# Graph routing
+networkx>=3.3
+# OSMnx pulls in shapely, geopandas, etc. — pin to avoid numpy conflicts
+osmnx>=1.9
+
+# Image handling
+Pillow>=10.3
+
+# HTTP (used by import_osm_trails for Overpass)
+requests>=2.32
+
+# Dev / tooling
+python-dotenv>=1.0      # optional: load .env in development

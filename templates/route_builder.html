@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Побудова маршруту — TrailFinder UA{% endblock %}
+
+{% block extra_css %}
+#map { height: 72vh; cursor: crosshair; }
+.weight-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.weight-row label { min-width:130px; font-size:.8rem; font-weight:600; color:#555; }
+.weight-row input[type=range] { flex:1; accent-color:#2e7d32; }
+.weight-row .val { min-width:28px; text-align:right; font-size:.82rem; font-weight:700; color:#2e7d32; }
+.point-tag {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:9px; background:#f8f8f8;
+  font-size:.82rem; margin-bottom:8px;
+}
+.point-tag .dot { width:12px;height:12px;border-radius:50%;flex-shrink:0; }
+.route-stat { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; font-size:.85rem; }
+.route-stat i { width:18px; text-align:center; }
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Панель керування -->
+  <div class="col-lg-3 col-md-4">
+    <div class="side-panel" style="position:sticky;top:12px">
+
+      <div class="side-panel-title"><i class="fas fa-directions me-2"></i>Побудова маршруту</div>
+
+      <p style="font-size:.82rem;color:#888;margin-bottom:14px;line-height:1.5">
+        Клікніть на карту, щоб встановити <b>точку старту</b>, потім — <b>точку фінішу</b>.
+      </p>
+
+      <div class="point-tag">
+        <span class="dot" style="background:#2e7d32"></span>
+        <div>
+          <div style="font-weight:700;color:#2e7d32;font-size:.72rem;text-transform:uppercase">Старт</div>
+          <div id="start-coords" style="color:#888">не вибрано</div>
+        </div>
+      </div>
+      <div class="point-tag mb-3">
+        <span class="dot" style="background:#c62828"></span>
+        <div>
+          <div style="font-weight:700;color:#c62828;font-size:.72rem;text-transform:uppercase">Фініш</div>
+          <div id="end-coords" style="color:#888">не вибрано</div>
+        </div>
+      </div>
+
+      <hr style="border-color:#eee">
+      <div style="font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">
+        Вагові коефіцієнти
+      </div>
+
+      <div class="weight-row">
+        <label>w1 — Відстань</label>
+        <input type="range" id="w1" min="0" max="3" step="0.1" value="1.0"
+               oninput="document.getElementById('w1v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w1v">1.0</span>
+      </div>
+      <div class="weight-row">
+        <label>w2 — Висота</label>
+        <input type="range" id="w2" min="0" max="3" step="0.1" value="1.5"
+               oninput="document.getElementById('w2v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w2v">1.5</span>
+      </div>
+      <div class="weight-row mb-3">
+        <label>w3 — Складність</label>
+        <input type="range" id="w3" min="0" max="3" step="0.1" value="1.0"
+               oninput="document.getElementById('w3v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w3v">1.0</span>
+      </div>
+
+      <button id="build-btn" class="btn btn-tf w-100 mb-2" onclick="buildRoute()" disabled>
+        <i class="fas fa-play me-2"></i>Побудувати маршрут
+      </button>
+      <button class="btn btn-tf-outline w-100" onclick="resetMap()">
+        <i class="fas fa-redo me-1"></i>Скинути
+      </button>
+
+      <div id="status-msg" style="font-size:.8rem;min-height:20px;margin-top:10px;color:#888"></div>
+
+      <!-- Результат -->
+      <div id="route-stats" class="d-none mt-3">
+        <hr style="border-color:#eee">
+        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:.82rem;color:#1b5e20;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
+          Побудований маршрут
+        </div>
+        <div class="route-stat">
+          <i class="fas fa-route" style="color:#2e7d32"></i>
+          <span>Відстань: <b><span id="stat-dist">—</span> км</b></span>
+        </div>
+        <div class="route-stat" style="border-bottom:none">
+          <i class="fas fa-clock" style="color:#1565c0"></i>
+          <span>Прибл. час: <b><span id="stat-time">—</span> год</b></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Карта -->
+  <div class="col-lg-9 col-md-8">
+    <div id="map"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const map = L.map('map').setView([48.15, 23.5], 9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'&copy; OpenStreetMap contributors', maxZoom:18,
+}).addTo(map);
+
+let startM=null, endM=null, routeLayer=null, clickState='start';
+
+const mkIcon = color => L.divIcon({
+  html:`<div style="background:${color};width:16px;height:16px;border-radius:50%;
+             border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>`,
+  iconSize:[16,16], iconAnchor:[8,8], className:'',
+});
+
+map.on('click', e => {
+  const {lat,lng} = e.latlng;
+  const fmt = (v,l) => v.toFixed(5) + ', ' + l.toFixed(5);
+  if (clickState === 'start') {
+    if (startM) map.removeLayer(startM);
+    startM = L.marker([lat,lng],{icon:mkIcon('#2e7d32')}).bindTooltip('Старт').addTo(map);
+    document.getElementById('start-coords').textContent = fmt(lat,lng);
+    clickState = 'end';
+    setStatus('Тепер клікніть точку фінішу на карті.');
+  } else if (clickState === 'end') {
+    if (endM) map.removeLayer(endM);
+    endM = L.marker([lat,lng],{icon:mkIcon('#c62828')}).bindTooltip('Фініш').addTo(map);
+    document.getElementById('end-coords').textContent = fmt(lat,lng);
+    document.getElementById('build-btn').disabled = false;
+    clickState = 'done';
+    setStatus('Обидві точки встановлено. Натисніть «Побудувати маршрут».');
+  }
+});
+
+async function buildRoute() {
+  if (!startM || !endM) return;
+  setStatus('Обчислення маршруту…');
+  document.getElementById('build-btn').disabled = true;
+  const weights = {
+    w1: parseFloat(document.getElementById('w1').value),
+    w2: parseFloat(document.getElementById('w2').value),
+    w3: parseFloat(document.getElementById('w3').value),
+  };
+  try {
+    const r = await fetch('/api/route/build/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+      body: JSON.stringify({
+        start:[startM.getLatLng().lat, startM.getLatLng().lng],
+        end:  [endM.getLatLng().lat,   endM.getLatLng().lng],
+        weights,
+      }),
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      setStatus('Маршрут не знайдено: ' + (err.detail || 'невідома помилка'), true);
+      document.getElementById('build-btn').disabled = false;
+      return;
+    }
+    const feature = await r.json();
+    if (routeLayer) map.removeLayer(routeLayer);
+    routeLayer = L.geoJSON(feature, {
+      style:{ color:'#1565c0', weight:5, opacity:.9,
+              dashArray: null,
+              lineCap:'round', lineJoin:'round' },
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding:[30,30] });
+    const p = feature.properties;
+    document.getElementById('stat-dist').textContent = p.distance_km;
+    document.getElementById('stat-time').textContent = p.estimated_time_h;
+    document.getElementById('route-stats').classList.remove('d-none');
+    setStatus('✓ Маршрут успішно побудовано!');
+  } catch(ex) {
+    setStatus('Помилка запиту. Перевірте логи сервера.', true);
+  }
+  document.getElementById('build-btn').disabled = false;
+}
+
+function resetMap() {
+  [startM, endM, routeLayer].forEach(l => { if(l) map.removeLayer(l); });
+  startM = endM = routeLayer = null; clickState = 'start';
+  document.getElementById('start-coords').textContent = 'не вибрано';
+  document.getElementById('end-coords').textContent   = 'не вибрано';
+  document.getElementById('build-btn').disabled = true;
+  document.getElementById('route-stats').classList.add('d-none');
+  setStatus('');
+}
+
+function setStatus(msg, isErr=false) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.style.color = isErr ? '#c62828' : '#888';
+}
+
+function getCookie(name) {
+  return document.cookie.split('; ').find(r=>r.startsWith(name+'='))?.split('=')[1] ?? '';
+}
+</script>
+{% endblock %}

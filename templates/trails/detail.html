@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}{{ trail.name }} — TrailFinder UA{% endblock %}
+
+{% block extra_css %}
+#map { height: 52vh; }
+.poi-dot { width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px; }
+.review-card { border-left:3px solid #c8e6c9;padding-left:12px;margin-bottom:16px; }
+.star-filled  { color:#f9a825; }
+.star-empty   { color:#ddd; }
+{% endblock %}
+
+{% block content %}
+<!-- Хлібні крихти -->
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb" style="font-size:.82rem">
+    <li class="breadcrumb-item"><a href="{% url 'home' %}" style="color:#2e7d32">Карта</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'trail-list' %}" style="color:#2e7d32">Маршрути</a></li>
+    <li class="breadcrumb-item active">{{ trail.name }}</li>
+  </ol>
+</nav>
+
+<div class="row g-3">
+
+  <!-- Ліва колонка -->
+  <div class="col-lg-4">
+
+    <!-- Основна інфо -->
+    <div class="tf-card p-4 mb-3">
+      <span class="sac-badge sac-{{ trail.sac_scale }} mb-3 d-inline-block">{{ trail.get_sac_scale_display }}</span>
+      <h4 style="font-family:Montserrat,sans-serif;font-weight:800;color:#1b5e20;margin-bottom:6px">
+        {{ trail.name }}
+      </h4>
+      {% if trail.surface %}
+        <p style="font-size:.82rem;color:#888;margin-bottom:12px">
+          <i class="fas fa-road me-1"></i>Покриття: {{ trail.surface }}
+        </p>
+      {% endif %}
+      <p style="font-size:.88rem;color:#555;line-height:1.6">
+        {{ trail.description|default:"Опис маршруту відсутній." }}
+      </p>
+    </div>
+
+    <!-- Статистика -->
+    <div class="row g-2 mb-3">
+      <div class="col-4">
+        <div class="stat-chip">
+          <div class="val">{{ trail.distance_km }}</div>
+          <div class="lbl">км</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="stat-chip">
+          <div class="val">{{ trail.elevation_gain_m }}</div>
+          <div class="lbl">м підйому</div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="stat-chip">
+          <div class="val">{{ estimated_time|floatformat:1 }}г</div>
+          <div class="lbl">за Найсмітом</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопка збереження -->
+    {% if user.is_authenticated %}
+    <button id="save-btn" onclick="toggleSave({{ trail.pk }})"
+            class="w-100 mb-3 fw-bold"
+            style="border:none;border-radius:10px;padding:10px;cursor:pointer;transition:all .2s;
+                   background:{% if saved %}#2e7d32{% else %}#f1f8f1{% endif %};
+                   color:{% if saved %}#fff{% else %}#2e7d32{% endif %};">
+      <i class="fas fa-bookmark me-2"></i>
+      <span id="save-label">{% if saved %}Збережено ✓{% else %}Зберегти маршрут{% endif %}</span>
+    </button>
+    {% endif %}
+
+    <!-- Близькі об'єкти -->
+    {% if nearby_pois %}
+    <div class="tf-card p-3 mb-3">
+      <div class="side-panel-title" style="margin-bottom:.7rem">
+        <i class="fas fa-map-marker-alt me-2"></i>Об'єкти поруч (500 м)
+      </div>
+      {% for poi in nearby_pois %}
+      <div class="d-flex justify-content-between align-items-center py-1" style="border-bottom:1px solid #f0f0f0;font-size:.82rem">
+        <span>
+          {% if poi.poi_type == 'water_source' %}<span class="poi-dot" style="background:#1565c0"></span>
+          {% elif poi.poi_type == 'shelter' %}<span class="poi-dot" style="background:#6d4c41"></span>
+          {% elif poi.poi_type == 'camping' %}<span class="poi-dot" style="background:#2e7d32"></span>
+          {% else %}<span class="poi-dot" style="background:#0288d1"></span>{% endif %}
+          {{ poi.name }}
+        </span>
+        <span style="color:#aaa;font-size:.72rem">{{ poi.get_poi_type_display }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Права колонка: карта + відгуки -->
+  <div class="col-lg-8">
+
+    <!-- Карта -->
+    <div class="mb-3"><div id="map"></div></div>
+
+    <!-- Відгуки -->
+    <div class="tf-card p-4">
+      <div class="side-panel-title mb-3"><i class="fas fa-star me-2" style="color:#f9a825"></i>Відгуки</div>
+
+      {% if reviews %}
+        {% for r in reviews %}
+        <div class="review-card">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong style="font-size:.88rem">{{ r.user.username }}</strong>
+            <span>
+              {% for i in "12345" %}
+                <i class="fas fa-star {% if forloop.counter <= r.rating %}star-filled{% else %}star-empty{% endif %}" style="font-size:.75rem"></i>
+              {% endfor %}
+            </span>
+          </div>
+          {% if r.comment %}<p style="font-size:.85rem;color:#555;margin-bottom:4px">{{ r.comment }}</p>{% endif %}
+          {% if r.photo %}<img src="{{ r.photo.url }}" class="img-thumbnail mb-1" style="max-height:110px">{% endif %}
+          <small style="color:#aaa">{{ r.created_at|date:"d.m.Y" }}</small>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="color:#aaa;font-size:.88rem">Поки немає відгуків. Будьте першим!</p>
+      {% endif %}
+
+      <!-- Форма відгуку -->
+      {% if user.is_authenticated %}
+      <hr style="border-color:#f0f0f0">
+      <div class="side-panel-title mb-2">Залишити відгук</div>
+      <form onsubmit="submitReview(event, {{ trail.pk }})">
+        {% csrf_token %}
+        <div class="row g-2 mb-2">
+          <div class="col-auto">
+            <label class="form-label">Оцінка</label>
+            <select name="rating" class="form-select form-select-sm" style="width:auto">
+              {% for i in "12345" %}<option value="{{ forloop.counter }}">{{ forloop.counter }} ★</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col">
+            <label class="form-label">Коментар</label>
+            <textarea name="comment" class="form-control form-control-sm" rows="2" placeholder="Ваші враження від маршруту…"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-tf btn-sm">Опублікувати відгук</button>
+      </form>
+      {% else %}
+      <p style="font-size:.82rem;color:#aaa;margin-top:10px">
+        <a href="{% url 'login' %}" style="color:#2e7d32">Увійдіть</a>, щоб залишити відгук.
+      </p>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const trailData = {{ trail_geojson|safe }};
+const poisData  = {{ pois_geojson|safe }};
+const SAC_COLOR = '{{ sac_color }}';
+
+const POI_ICONS = {
+  water_source:{ color:'#1565c0', icon:'fa-tint' },
+  shelter:     { color:'#6d4c41', icon:'fa-home' },
+  camping:     { color:'#2e7d32', icon:'fa-campground' },
+  viewpoint:   { color:'#0288d1', icon:'fa-eye' },
+};
+
+const map = L.map('map');
+const osmTile  = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxZoom:19 });
+const topoTile = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  { attribution:'Map data: &copy; OpenStreetMap contributors, SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)', maxZoom:17 });
+topoTile.addTo(map);
+L.control.layers({ 'Топографічна (OpenTopoMap)': topoTile, 'Стандартна (OSM)': osmTile }).addTo(map);
+
+const trailLayer = L.geoJSON(trailData,{
+  style:{ color:SAC_COLOR, weight:4, opacity:.9 },
+}).addTo(map);
+map.fitBounds(trailLayer.getBounds(), { padding:[20,20] });
+
+L.geoJSON(poisData, {
+  pointToLayer(f, ll) {
+    const c = POI_ICONS[f.properties.poi_type] || { color:'#555', icon:'fa-map-marker' };
+    return L.marker(ll, { icon: L.divIcon({
+      html:`<div style="background:${c.color};width:26px;height:26px;border-radius:50%;
+                 display:flex;align-items:center;justify-content:center;
+                 border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)">
+              <i class="fas ${c.icon}" style="color:#fff;font-size:12px"></i>
+            </div>`,
+      iconSize:[26,26], iconAnchor:[13,13], className:'',
+    })});
+  },
+  onEachFeature(f, layer) {
+    layer.bindPopup(`<b>${f.properties.name}</b>`);
+  },
+}).addTo(map);
+
+async function toggleSave(id) {
+  const r = await fetch(`/api/trails/${id}/save/`, {
+    method:'POST', headers:{'X-CSRFToken':getCookie('csrftoken')},
+  });
+  const d = await r.json();
+  const btn = document.getElementById('save-btn');
+  document.getElementById('save-label').textContent = d.saved ? 'Збережено ✓' : 'Зберегти маршрут';
+  btn.style.background = d.saved ? '#2e7d32' : '#f1f8f1';
+  btn.style.color = d.saved ? '#fff' : '#2e7d32';
+}
+
+async function submitReview(e, id) {
+  e.preventDefault();
+  const form = e.target;
+  const r = await fetch(`/api/trails/${id}/reviews/`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+    body: JSON.stringify({ rating: parseInt(form.rating.value), comment: form.comment.value }),
+  });
+  if (r.ok) location.reload();
+  else alert('Помилка при збереженні відгуку');
+}
+
+function getCookie(name) {
+  return document.cookie.split('; ').find(r=>r.startsWith(name+'='))?.split('=')[1] ?? '';
+}
+</script>
+{% endblock %}

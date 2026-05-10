@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+{% block title %}Побудова маршруту — TrailFinder UA{% endblock %}
+
+{% block extra_css %}
+#map { height: 72vh; cursor: crosshair; }
+.weight-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.weight-row label { min-width:130px; font-size:.8rem; font-weight:600; color:#555; }
+.weight-row input[type=range] { flex:1; accent-color:#2e7d32; }
+.weight-row .val { min-width:28px; text-align:right; font-size:.82rem; font-weight:700; color:#2e7d32; }
+.point-tag {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-radius:9px; background:#f8f8f8;
+  font-size:.82rem; margin-bottom:8px;
+}
+.point-tag .dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+.route-stat { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; font-size:.85rem; }
+.route-stat i { width:18px; text-align:center; }
+.snap-note { font-size:.75rem; color:#888; margin-top:2px; }
+.layer-toggle { display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; }
+.layer-btn {
+  font-size:.72rem; padding:3px 10px; border-radius:20px; border:1.5px solid #ccc;
+  background:#fff; cursor:pointer; transition:all .15s; font-weight:600; color:#555;
+}
+.layer-btn.active { background:#2e7d32; border-color:#2e7d32; color:#fff; }
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- Панель керування -->
+  <div class="col-lg-3 col-md-4">
+    <div class="side-panel" style="position:sticky;top:12px;max-height:95vh;overflow-y:auto">
+
+      <div class="side-panel-title"><i class="fas fa-directions me-2"></i>Побудова маршруту</div>
+
+      <p style="font-size:.82rem;color:#888;margin-bottom:10px;line-height:1.5">
+        Клікніть будь-де на карті щоб встановити <b>точку старту</b>, потім — <b>точку фінішу</b>.
+      </p>
+
+      <!-- Перемикач шарів -->
+      <div class="layer-toggle" id="layer-toggles">
+        <button class="layer-btn active" onclick="toggleLayer('trails',this)"><i class="fas fa-route me-1"></i>Стежки</button>
+        <button class="layer-btn" onclick="toggleLayer('roads',this)"><i class="fas fa-road me-1"></i>Дороги</button>
+        <button class="layer-btn active" onclick="toggleLayer('pois',this)"><i class="fas fa-map-marker-alt me-1"></i>POI</button>
+      </div>
+
+      <div class="point-tag">
+        <span class="dot" style="background:#2e7d32"></span>
+        <div>
+          <div style="font-weight:700;color:#2e7d32;font-size:.72rem;text-transform:uppercase">Старт</div>
+          <div id="start-coords" style="color:#888">не вибрано</div>
+          <div id="start-snap" class="snap-note"></div>
+        </div>
+      </div>
+      <div class="point-tag mb-3">
+        <span class="dot" style="background:#c62828"></span>
+        <div>
+          <div style="font-weight:700;color:#c62828;font-size:.72rem;text-transform:uppercase">Фініш</div>
+          <div id="end-coords" style="color:#888">не вибрано</div>
+          <div id="end-snap" class="snap-note"></div>
+        </div>
+      </div>
+
+      <hr style="border-color:#eee">
+      <div style="font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">
+        Вагові коефіцієнти
+      </div>
+      <div class="weight-row">
+        <label>w1 — Відстань</label>
+        <input type="range" id="w1" min="0" max="3" step="0.1" value="1.0"
+               oninput="document.getElementById('w1v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w1v">1.0</span>
+      </div>
+      <div class="weight-row">
+        <label>w2 — Висота</label>
+        <input type="range" id="w2" min="0" max="3" step="0.1" value="1.5"
+               oninput="document.getElementById('w2v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w2v">1.5</span>
+      </div>
+      <div class="weight-row mb-3">
+        <label>w3 — Складність</label>
+        <input type="range" id="w3" min="0" max="3" step="0.1" value="1.0"
+               oninput="document.getElementById('w3v').textContent=parseFloat(this.value).toFixed(1)">
+        <span class="val" id="w3v">1.0</span>
+      </div>
+
+      <button id="build-btn" class="btn btn-tf w-100 mb-2" onclick="buildRoute()" disabled>
+        <i class="fas fa-play me-2"></i>Побудувати маршрут
+      </button>
+      <button class="btn btn-tf-outline w-100 mb-2" onclick="resetMap()">
+        <i class="fas fa-redo me-1"></i>Скинути
+      </button>
+      <button class="btn btn-tf-outline w-100" onclick="fitToTrails()" style="font-size:.78rem">
+        <i class="fas fa-map-marked-alt me-1"></i>Показати всі стежки
+      </button>
+
+      <div id="status-msg" style="font-size:.8rem;min-height:20px;margin-top:10px;color:#888"></div>
+
+      <!-- Результат -->
+      <div id="route-stats" class="d-none mt-3">
+        <hr style="border-color:#eee">
+        <div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:.82rem;color:#1b5e20;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">
+          Побудований маршрут
+        </div>
+        <div class="route-stat">
+          <i class="fas fa-route" style="color:#2e7d32"></i>
+          <span>Відстань: <b><span id="stat-dist">—</span> км</b></span>
+        </div>
+        <div class="route-stat" style="border-bottom:none">
+          <i class="fas fa-clock" style="color:#1565c0"></i>
+          <span>Прибл. час: <b><span id="stat-time">—</span> год</b></span>
+        </div>
+      </div>
+
+      <!-- Легенда -->
+      <hr style="border-color:#eee;margin-top:16px">
+      <div style="font-size:.78rem;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Легенда</div>
+      <div style="font-size:.75rem;line-height:2">
+        <div><span style="display:inline-block;width:20px;height:4px;background:#4caf50;border-radius:2px;vertical-align:middle;margin-right:6px"></span>T1 — Піший</div>
+        <div><span style="display:inline-block;width:20px;height:4px;background:#ffeb3b;border-radius:2px;vertical-align:middle;margin-right:6px"></span>T2 — Гірський</div>
+        <div><span style="display:inline-block;width:20px;height:4px;background:#ff9800;border-radius:2px;vertical-align:middle;margin-right:6px"></span>T3 — Вимогливий</div>
+        <div><span style="display:inline-block;width:20px;height:4px;background:#f44336;border-radius:2px;vertical-align:middle;margin-right:6px"></span>T4 — Альпійський</div>
+        <div><span style="display:inline-block;width:20px;height:4px;background:#880e4f;border-radius:2px;vertical-align:middle;margin-right:6px"></span>T5–T6 — Складний</div>
+        <div><span style="display:inline-block;width:20px;height:3px;background:#9e9e9e;border-radius:2px;vertical-align:middle;margin-right:6px;border-top:2px dashed #9e9e9e"></span>Стежка / дорога</div>
+        <div style="margin-top:4px"><span style="display:inline-block;width:20px;height:5px;background:#ff6d00;border-radius:2px;vertical-align:middle;margin-right:6px"></span>Маршрут</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Карта -->
+  <div class="col-lg-9 col-md-8">
+    <div id="map" style="height:72vh;min-height:400px;width:100%;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.08)"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const SAC_COLORS = {{ sac_colors|safe }};
+
+const POI_ICONS = {
+  water_source: { icon:'fa-tint',       color:'#1565c0', label:'Джерело води' },
+  shelter:      { icon:'fa-home',       color:'#6d4c41', label:'Притулок' },
+  camping:      { icon:'fa-campground', color:'#2e7d32', label:'Кемпінг' },
+  viewpoint:    { icon:'fa-eye',        color:'#0288d1', label:'Оглядовий майданчик' },
+};
+
+function makeDivIcon(type) {
+  const c = POI_ICONS[type] || { icon:'fa-map-marker', color:'#555' };
+  return L.divIcon({
+    html:`<div style="background:${c.color};width:24px;height:24px;border-radius:50%;display:flex;
+               align-items:center;justify-content:center;border:2px solid #fff;
+               box-shadow:0 2px 6px rgba(0,0,0,.35)">
+            <i class="fas ${c.icon}" style="color:#fff;font-size:11px"></i>
+          </div>`,
+    iconSize:[24,24], iconAnchor:[12,12], className:'',
+  });
+}
+
+const mkIcon = (color, label) => L.divIcon({
+  html:`<div style="background:${color};width:34px;height:34px;border-radius:50%;
+    border:3px solid #fff;box-shadow:0 3px 12px rgba(0,0,0,.6);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:14px;color:#fff;font-family:Montserrat,sans-serif">${label}</div>`,
+  iconSize:[34,34], iconAnchor:[17,17], className:'',
+});
+
+const mkSnapIcon = () => L.divIcon({
+  html:`<div style="width:12px;height:12px;border-radius:50%;background:#ff6d00;
+    border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+  iconSize:[12,12], iconAnchor:[6,6], className:'',
+});
+
+// ── Тайли ──────────────────────────────────────────────────────────────────
+const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom:19,
+});
+const topoTile = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution:'Map: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+  maxZoom:17,
+});
+const satTile = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution:'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA',
+  maxZoom:19,
+});
+
+// ── Карта ──────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl:true }).setView([48.3, 23.8], 9);
+topoTile.addTo(map);
+L.control.layers(
+  { 'Топографічна (OpenTopoMap)': topoTile, 'Стандартна (OSM)': osmTile, 'Супутник (Esri)': satTile },
+  {},
+  { position:'topright' }
+).addTo(map);
+
+// ── Шари ───────────────────────────────────────────────────────────────────
+const trailsGeoLayer = L.layerGroup().addTo(map);
+const roadsGeoLayer  = L.layerGroup(); // not added initially — loaded on demand
+const poiCluster     = L.markerClusterGroup({
+  maxClusterRadius: 50,
+  iconCreateFunction(cluster) {
+    const n = cluster.getChildCount();
+    const size = n < 10 ? 32 : n < 50 ? 38 : 44;
+    return L.divIcon({
+      html:`<div style="background:#2e7d32;color:#fff;width:${size}px;height:${size}px;
+              border-radius:50%;display:flex;align-items:center;justify-content:center;
+              font-weight:700;font-size:${size>38?13:11}px;border:2px solid #fff;
+              box-shadow:0 2px 8px rgba(0,0,0,.3)">${n}</div>`,
+      iconSize:[size,size], iconAnchor:[size/2,size/2], className:'',
+    });
+  },
+}).addTo(map);
+
+// Layer visibility state (roads off by default — lazy loaded)
+const layerState = { trails: true, roads: false, pois: true };
+
+function toggleLayer(name, btn) {
+  layerState[name] = !layerState[name];
+  btn.classList.toggle('active', layerState[name]);
+  if (name === 'trails') {
+    layerState[name] ? map.addLayer(trailsGeoLayer) : map.removeLayer(trailsGeoLayer);
+  }
+  if (name === 'roads') {
+    if (layerState[name]) {
+      map.addLayer(roadsGeoLayer);
+      loadRoads(); // lazy load on first toggle
+    } else {
+      map.removeLayer(roadsGeoLayer);
+    }
+  }
+  if (name === 'pois') {
+    layerState[name] ? map.addLayer(poiCluster) : map.removeLayer(poiCluster);
+  }
+}
+
+// ── Клік — реєструємо ПЕРШИМ ───────────────────────────────────────────────
+let startM=null, endM=null, routeLayer=null, snapMarkers=[], clickState='start';
+
+map.on('click', e => {
+  const {lat, lng} = e.latlng;
+  const fmt = v => v.toFixed(5);
+  if (clickState === 'start') {
+    if (startM) map.removeLayer(startM);
+    startM = L.marker([lat,lng], {icon:mkIcon('#2e7d32','S'), zIndexOffset:1000}).addTo(map);
+    document.getElementById('start-coords').textContent = fmt(lat)+', '+fmt(lng);
+    document.getElementById('start-snap').textContent = '';
+    clickState = 'end';
+    setStatus('Тепер клікніть точку фінішу.');
+  } else if (clickState === 'end') {
+    if (endM) map.removeLayer(endM);
+    endM = L.marker([lat,lng], {icon:mkIcon('#c62828','F'), zIndexOffset:1000}).addTo(map);
+    document.getElementById('end-coords').textContent = fmt(lat)+', '+fmt(lng);
+    document.getElementById('end-snap').textContent = '';
+    document.getElementById('build-btn').disabled = false;
+    clickState = 'done';
+    setStatus('Натисніть «Побудувати маршрут».');
+  }
+});
+
+// ── Завантаження даних ─────────────────────────────────────────────────────
+function trailWeight(z) { return z >= 14 ? 5 : z >= 12 ? 4 : z >= 10 ? 3 : 2; }
+
+async function loadTrails() {
+  setStatus('Завантаження стежок…');
+  try {
+    const res = await fetch('/api/trails/map/?type=trail');
+    const fc  = await res.json();
+    const features = fc.features || [];
+    if (!features.length) { setStatus('Стежок не знайдено. Виконайте імпорт OSM.', true); return; }
+
+    const z = map.getZoom();
+    L.geoJSON(fc, {
+      style: f => {
+        const p = f.properties;
+        return {
+          color: p.colour || SAC_COLORS[p.sac_scale] || '#9e9e9e',
+          weight: trailWeight(z), opacity: 0.88, bubblingMouseEvents: true,
+        };
+      },
+      onEachFeature(f, layer) {
+        const p = f.properties;
+        layer.bindTooltip(
+          `<b>${p.name}</b><br><span style="font-size:.8rem;color:#555">🥾 ${p.sac_label||p.sac_scale} · ${p.distance_km} км</span>`,
+          { sticky:true, direction:'top' });
+      },
+    }).addTo(trailsGeoLayer);
+
+    map.on('zoomend', () => {
+      const zz = map.getZoom();
+      trailsGeoLayer.eachLayer(l => l.setStyle && l.setStyle({ weight: trailWeight(zz) }));
+      roadsGeoLayer.eachLayer(l => l.setStyle && l.setStyle({ weight: Math.max(1, trailWeight(zz)-1) }));
+    });
+
+    fitToTrails();
+    setStatus(`${features.length} стежок завантажено. Клікніть на карту.`);
+  } catch(e) {
+    setStatus('Помилка завантаження стежок.', true);
+    console.error(e);
+  }
+}
+
+let roadsLoaded = false;
+async function loadRoads() {
+  if (roadsLoaded) return;
+  setStatus('Завантаження доріг (може тривати)…');
+  try {
+    // Load in bbox chunks to avoid huge response — use current map bounds
+    const b = map.getBounds();
+    const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
+    const res = await fetch(`/api/trails/?type=road&bbox=${bbox}&page_size=2000`);
+    const data = await res.json();
+    const features = data.features || (data.results?.features) || [];
+    const z = map.getZoom();
+    L.geoJSON({ type:'FeatureCollection', features }, {
+      style: f => {
+        const p = f.properties;
+        return {
+          color: p.colour || '#78909c',
+          weight: Math.max(1, trailWeight(z) - 1),
+          opacity: 0.5, dashArray: '5 4', bubblingMouseEvents: true,
+        };
+      },
+      onEachFeature(f, layer) {
+        const p = f.properties;
+        layer.bindTooltip(`<b>${p.name}</b><br><span style="font-size:.8rem">🛣 дорога · ${p.distance_km} км</span>`, { sticky:true });
+      },
+    }).addTo(roadsGeoLayer);
+    roadsLoaded = true;
+    setStatus(`Дороги завантажено. Клікніть на карту.`);
+  } catch(e) {
+    setStatus('Помилка завантаження доріг.', true);
+  }
+}
+
+async function loadPOIs() {
+  try {
+    const b = map.getBounds();
+    const res = await fetch(`/api/pois/nearby/?lat=${b.getCenter().lat}&lon=${b.getCenter().lng}&radius_m=200000`);
+    const fc  = await res.json();
+    const features = Array.isArray(fc) ? fc : (fc.features || []);
+    features.forEach(f => {
+      const p = f.properties;
+      const coords = f.geometry?.coordinates;
+      if (!coords) return;
+      L.marker([coords[1], coords[0]], { icon: makeDivIcon(p.poi_type) })
+        .bindTooltip(`<b>${p.name || POI_ICONS[p.poi_type]?.label}</b>`, { sticky:true })
+        .addTo(poiCluster);
+    });
+  } catch(e) { /* POI optional */ }
+}
+
+function fitToTrails() {
+  const b = trailsGeoLayer.getBounds();
+  if (b.isValid()) map.fitBounds(b, { padding:[30,30] });
+}
+
+loadTrails().then(() => loadPOIs());
+
+// ── Побудова маршруту ──────────────────────────────────────────────────────
+async function buildRoute() {
+  if (!startM || !endM) return;
+  setStatus('Обчислення маршруту…');
+  document.getElementById('build-btn').disabled = true;
+  const weights = {
+    w1: parseFloat(document.getElementById('w1').value),
+    w2: parseFloat(document.getElementById('w2').value),
+    w3: parseFloat(document.getElementById('w3').value),
+  };
+
+  try {
+    const r = await fetch('/api/route/build/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':getCookie('csrftoken')},
+      body: JSON.stringify({
+        start: [startM.getLatLng().lat, startM.getLatLng().lng],
+        end:   [endM.getLatLng().lat,   endM.getLatLng().lng],
+        weights,
+      }),
+    });
+
+    if (!r.ok) {
+      const err = await r.json();
+      setStatus(err.detail || 'Маршрут не знайдено.', true);
+      document.getElementById('build-btn').disabled = false;
+      return;
+    }
+
+    const feature = await r.json();
+    const p = feature.properties;
+
+    if (routeLayer) routeLayer.forEach(l => map.removeLayer(l));
+    snapMarkers.forEach(m => map.removeLayer(m));
+    snapMarkers = [];
+
+    const shadow = L.geoJSON(feature, {
+      style:{ color:'#111', weight:10, opacity:.3, lineCap:'round', lineJoin:'round' },
+    }).addTo(map);
+    const main = L.geoJSON(feature, {
+      style:{ color:'#ff6d00', weight:6, opacity:1, lineCap:'round', lineJoin:'round' },
+    }).addTo(map);
+    routeLayer = [shadow, main];
+
+    if (p.snap_start) {
+      snapMarkers.push(
+        L.marker(p.snap_start, { icon:mkSnapIcon(), zIndexOffset:500 })
+          .bindTooltip(`Старт (${p.snap_start_m} м від кліку)`, {direction:'top'})
+          .addTo(map)
+      );
+      document.getElementById('start-snap').textContent =
+        p.snap_start_m > 50 ? `→ прив'язано за ${p.snap_start_m} м` : '';
+    }
+    if (p.snap_end) {
+      snapMarkers.push(
+        L.marker(p.snap_end, { icon:mkSnapIcon(), zIndexOffset:500 })
+          .bindTooltip(`Фініш (${p.snap_end_m} м від кліку)`, {direction:'top'})
+          .addTo(map)
+      );
+      document.getElementById('end-snap').textContent =
+        p.snap_end_m > 50 ? `→ прив'язано за ${p.snap_end_m} м` : '';
+    }
+
+    map.fitBounds(main.getBounds(), { padding:[40,40] });
+    document.getElementById('stat-dist').textContent = p.distance_km;
+    document.getElementById('stat-time').textContent = p.estimated_time_h ?? '—';
+    document.getElementById('route-stats').classList.remove('d-none');
+    setStatus('✓ Маршрут побудовано!', false, true);
+
+  } catch(ex) {
+    setStatus('Помилка з\'єднання із сервером.', true);
+    console.error(ex);
+  }
+  document.getElementById('build-btn').disabled = false;
+}
+
+// ── Утиліти ────────────────────────────────────────────────────────────────
+function resetMap() {
+  [startM, endM].forEach(l => { if(l) map.removeLayer(l); });
+  if (routeLayer) routeLayer.forEach(l => map.removeLayer(l));
+  snapMarkers.forEach(m => map.removeLayer(m));
+  startM = endM = routeLayer = null;
+  snapMarkers = [];
+  clickState = 'start';
+  document.getElementById('start-coords').textContent = 'не вибрано';
+  document.getElementById('end-coords').textContent   = 'не вибрано';
+  document.getElementById('start-snap').textContent   = '';
+  document.getElementById('end-snap').textContent     = '';
+  document.getElementById('build-btn').disabled = true;
+  document.getElementById('route-stats').classList.add('d-none');
+  setStatus('');
+}
+
+function setStatus(msg, isErr=false, isOk=false) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.style.color = isErr ? '#c62828' : isOk ? '#2e7d32' : '#888';
+}
+
+function getCookie(name) {
+  return document.cookie.split('; ').find(r=>r.startsWith(name+'='))?.split('=')[1] ?? '';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Маршрути — TrailFinder UA{% endblock %}
+
+{% block extra_css %}
+.filter-bar {
+  background:#fff;
+  border-radius:14px;
+  padding:16px 20px;
+  box-shadow:0 4px 20px rgba(0,0,0,.07);
+  margin-bottom:20px;
+}
+.page-hero {
+  background: linear-gradient(135deg,#1b5e20,#388e3c);
+  border-radius:14px;
+  padding:28px 28px 22px;
+  margin-bottom:20px;
+  color:#fff;
+}
+{% endblock %}
+
+{% block content %}
+<!-- Заголовок -->
+<div class="page-hero">
+  <h4 class="mb-1 fw-bold" style="font-family:Montserrat,sans-serif">
+    <i class="fas fa-route me-2"></i>Гірські маршрути
+  </h4>
+  <p class="mb-0" style="opacity:.8;font-size:.9rem">Карпатські стежки — від легких прогулянок до альпійських маршрутів</p>
+</div>
+
+<!-- Фільтри (HTMX) -->
+<div class="filter-bar">
+  <form hx-get="{% url 'trail-list' %}"
+        hx-target="#trail-cards"
+        hx-trigger="change, submit"
+        hx-push-url="true"
+        class="row g-2 align-items-end">
+    {% csrf_token %}
+    <div class="col-sm-4 col-md-3">
+      <label class="form-label">Складність</label>
+      <select name="sac_scale" class="form-select form-select-sm">
+        <option value="">Усі рівні</option>
+        {% for val, label in sac_choices %}
+          <option value="{{ val }}" {% if filters.sac_scale == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-sm-3 col-md-2">
+      <label class="form-label">Макс. відстань, км</label>
+      <input type="number" name="max_distance" class="form-control form-control-sm"
+             value="{{ filters.max_distance }}" min="0" max="200" placeholder="будь-яка">
+    </div>
+    <div class="col-sm-3 col-md-2">
+      <label class="form-label">Макс. підйом, м</label>
+      <input type="number" name="max_elevation" class="form-control form-control-sm"
+             value="{{ filters.max_elevation }}" min="0" max="3000" placeholder="будь-який">
+    </div>
+    <div class="col-auto d-flex gap-2">
+      <button type="submit" class="btn btn-tf btn-sm">
+        <i class="fas fa-search me-1"></i>Фільтрувати
+      </button>
+      <a href="{% url 'trail-list' %}" class="btn btn-tf-outline btn-sm">Скинути</a>
+    </div>
+  </form>
+</div>
+
+<!-- Карточки -->
+<div id="trail-cards" class="row g-3">
+  {% include "trails/_trail_cards.html" %}
+</div>
+
+<!-- Пагінація -->
+{% if not request.META.HTTP_HX_REQUEST %}
+<nav class="mt-4 d-flex justify-content-center">
+  <ul class="pagination">
+    {% if page.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page.previous_page_number }}&sac_scale={{ filters.sac_scale }}&max_distance={{ filters.max_distance }}&max_elevation={{ filters.max_elevation }}">&laquo;</a>
+      </li>
+    {% endif %}
+    <li class="page-item disabled">
+      <span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+    </li>
+    {% if page.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page.next_page_number }}&sac_scale={{ filters.sac_scale }}&max_distance={{ filters.max_distance }}&max_elevation={{ filters.max_elevation }}">&raquo;</a>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+{% endblock %}

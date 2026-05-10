@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TrailFinder UA{% endblock %}</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
+  <!-- Leaflet MarkerCluster -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" crossorigin="anonymous">
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous">
+
+  <!-- Bootstrap 5 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous">
+
+  <!-- HTMX + Leaflet JS (sync — inline scripts use them immediately) -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" crossorigin="anonymous"></script>
+
+  <style>
+    :root {
+      --green-dark:  #1b5e20;
+      --green-main:  #2e7d32;
+      --green-mid:   #388e3c;
+      --green-light: #43a047;
+      --green-pale:  #e8f5e9;
+      --orange:      #ff6f00;
+      --bg:          #f0f4f0;
+      --card-bg:     #ffffff;
+      --text:        #1a2e1a;
+      --muted:       #6b7c6b;
+      --radius:      14px;
+      --shadow:      0 4px 20px rgba(0,0,0,.08);
+      --shadow-hover:0 8px 32px rgba(0,0,0,.14);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    main { flex: 1; }
+    h1,h2,h3,h4,h5,h6,.navbar-brand { font-family: 'Montserrat', sans-serif; }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-main) 100%) !important;
+      box-shadow: 0 2px 16px rgba(0,0,0,.18);
+      padding: 0.6rem 0;
+    }
+    .navbar-brand {
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: #fff !important;
+      letter-spacing: -.3px;
+    }
+    .navbar-brand i { color: #a5d6a7; }
+    .navbar .nav-link { color: rgba(255,255,255,.85) !important; font-weight: 500; transition: color .2s; }
+    .navbar .nav-link:hover { color: #fff !important; }
+    .navbar .nav-link.active { color: #fff !important; font-weight: 700; }
+    .navbar-toggler { border-color: rgba(255,255,255,.4); }
+    .navbar-toggler-icon { filter: invert(1); }
+    .btn-nav-outline {
+      border: 1.5px solid rgba(255,255,255,.6);
+      color: #fff !important;
+      border-radius: 8px;
+      padding: 4px 14px;
+      font-size: .85rem;
+      font-weight: 600;
+      transition: all .2s;
+    }
+    .btn-nav-outline:hover { background: rgba(255,255,255,.15); }
+    .btn-nav-solid {
+      background: #fff;
+      color: var(--green-dark) !important;
+      border-radius: 8px;
+      padding: 4px 14px;
+      font-size: .85rem;
+      font-weight: 700;
+      transition: all .2s;
+    }
+    .btn-nav-solid:hover { background: #e8f5e9; }
+
+    /* ── Cards ── */
+    .tf-card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: none;
+    }
+    .tf-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); transition: all .2s; }
+
+    /* ── Buttons ── */
+    .btn-tf {
+      background: linear-gradient(135deg, var(--green-main), var(--green-light));
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      padding: .5rem 1.2rem;
+      transition: all .2s;
+    }
+    .btn-tf:hover { background: linear-gradient(135deg, var(--green-dark), var(--green-main)); color:#fff; box-shadow: 0 4px 14px rgba(46,125,50,.35); }
+    .btn-tf-outline {
+      background: transparent;
+      color: var(--green-main);
+      border: 1.5px solid var(--green-main);
+      border-radius: 10px;
+      font-weight: 600;
+      padding: .45rem 1.1rem;
+      transition: all .2s;
+    }
+    .btn-tf-outline:hover { background: var(--green-pale); }
+
+    /* ── SAC badges ── */
+    .sac-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: .72rem;
+      font-weight: 700;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .sac-hiking                    { background: #2e7d32; }
+    .sac-mountain_hiking           { background: #f9a825; color:#333; }
+    .sac-demanding_mountain_hiking { background: #e65100; }
+    .sac-alpine_hiking             { background: #c62828; }
+    .sac-demanding_alpine_hiking   { background: #880e4f; }
+    .sac-difficult_alpine_hiking   { background: #4a148c; }
+
+    /* ── Map ── */
+    #map { border-radius: var(--radius); box-shadow: var(--shadow); }
+
+    /* ── Sidebar panels ── */
+    .side-panel {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 1.2rem;
+      box-shadow: var(--shadow);
+    }
+    .side-panel-title {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 700;
+      font-size: .9rem;
+      color: var(--green-dark);
+      margin-bottom: .9rem;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    /* ── Legend ── */
+    .legend-row { display:flex; align-items:center; gap:8px; font-size:.82rem; color:var(--muted); margin-bottom:5px; }
+    .legend-line { width:22px; height:5px; border-radius:3px; flex-shrink:0; }
+    .legend-dot  { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+
+    /* ── Stat chips ── */
+    .stat-chip {
+      background: var(--green-pale);
+      border-radius: 10px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .stat-chip .val { font-family:'Montserrat',sans-serif; font-size:1.35rem; font-weight:800; color:var(--green-dark); line-height:1; }
+    .stat-chip .lbl { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-top:3px; }
+
+    /* ── Footer ── */
+    footer {
+      background: linear-gradient(135deg, var(--green-dark), var(--green-main));
+      color: rgba(255,255,255,.7);
+      text-align: center;
+      padding: .9rem;
+      font-size: .8rem;
+    }
+    footer a { color: #a5d6a7; text-decoration: none; }
+
+    /* ── Form controls ── */
+    .form-control, .form-select {
+      border-radius: 9px;
+      border: 1.5px solid #d0e4d0;
+      font-size: .88rem;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--green-main);
+      box-shadow: 0 0 0 3px rgba(46,125,50,.12);
+    }
+    .form-label { font-weight: 600; font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 4px; }
+
+    {% block extra_css %}{% endblock %}
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="{% url 'home' %}">
+      <i class="fas fa-mountain me-2"></i>TrailFinder UA
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav me-auto gap-1 ms-3">
+        <li class="nav-item"><a class="nav-link" href="{% url 'home' %}"><i class="fas fa-map me-1"></i>Карта</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'trail-list' %}"><i class="fas fa-route me-1"></i>Маршрути</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'route-builder' %}"><i class="fas fa-directions me-1"></i>Побудова маршруту</a></li>
+      </ul>
+      <ul class="navbar-nav gap-2 align-items-center">
+        {% if user.is_authenticated %}
+          <li class="nav-item"><a class="nav-link" href="{% url 'profile' %}"><i class="fas fa-user-circle me-1"></i>{{ user.username }}</a></li>
+          <li class="nav-item"><a class="btn-nav-outline" href="{% url 'logout' %}">Вийти</a></li>
+        {% else %}
+          <li class="nav-item"><a class="btn-nav-outline" href="{% url 'login' %}">Увійти</a></li>
+          <li class="nav-item"><a class="btn-nav-solid" href="{% url 'register' %}">Реєстрація</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid px-3 py-3">
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert alert-{{ m.tags }} alert-dismissible fade show rounded-3" role="alert">
+        {{ m }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer>
+  <i class="fas fa-mountain me-1"></i> TrailFinder UA &mdash; Карпатські гірські маршрути &copy; 2026
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Реєстрація — TrailFinder UA{% endblock %}
+
+{% block extra_css %}
+.auth-wrap { min-height:80vh; display:flex; align-items:center; justify-content:center; padding:20px 0; }
+.auth-card { width:100%; max-width:460px; }
+.auth-header {
+  background: linear-gradient(135deg,#1b5e20,#388e3c);
+  border-radius:14px 14px 0 0;
+  padding:28px;
+  color:#fff;
+  text-align:center;
+}
+.auth-body { background:#fff; border-radius:0 0 14px 14px; padding:28px; box-shadow:0 8px 32px rgba(0,0,0,.1); }
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-header">
+      <i class="fas fa-user-plus" style="font-size:2.2rem;margin-bottom:10px;display:block;opacity:.9"></i>
+      <h5 style="font-family:Montserrat,sans-serif;font-weight:800;margin:0">Реєстрація</h5>
+      <p style="opacity:.75;font-size:.85rem;margin:4px 0 0">Приєднуйтесь до спільноти хайкерів</p>
+    </div>
+    <div class="auth-body">
+      <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="mb-3">
+          <label class="form-label">
+            {% if field.html_name == 'username' %}Ім'я користувача
+            {% elif field.html_name == 'password1' %}Пароль
+            {% elif field.html_name == 'password2' %}Повторіть пароль
+            {% else %}{{ field.label }}{% endif %}
+          </label>
+          <input
+            type="{{ field.field.widget.input_type }}"
+            name="{{ field.html_name }}"
+            class="form-control {% if field.errors %}is-invalid{% endif %}"
+            {% if field.value %}value="{{ field.value }}"{% endif %}>
+          {% if field.help_text %}
+            <div class="form-text" style="font-size:.75rem;color:#aaa">{{ field.help_text }}</div>
+          {% endif %}
+          {% for err in field.errors %}
+            <div class="invalid-feedback">{{ err }}</div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-tf w-100 py-2 mt-1">
+          <i class="fas fa-user-plus me-2"></i>Створити акаунт
+        </button>
+      </form>
+      <p class="text-center mt-3 mb-0" style="font-size:.85rem;color:#aaa">
+        Вже є акаунт? <a href="{% url 'login' %}" style="color:#2e7d32;font-weight:600">Увійти</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
